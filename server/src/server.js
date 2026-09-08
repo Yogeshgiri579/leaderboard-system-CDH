@@ -21,6 +21,20 @@ app.use(express.json());
 app.use('/api/users', userRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 
+// Root Endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'online',
+    platform: 'CloudDevOpsHub Leaderboard API',
+    endpoints: {
+      health: '/api/health',
+      leaderboard: '/api/leaderboard',
+      stats: '/api/leaderboard/stats',
+      submit: '/api/users/submit',
+    },
+  });
+});
+
 // Health Check Endpoint
 app.get('/api/health', (req, res) => {
   res.status(200).json({
