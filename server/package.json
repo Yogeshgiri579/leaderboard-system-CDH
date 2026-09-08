@@ -1,0 +1,24 @@
+{
+  "name": "clouddevopshub-leaderboard-server",
+  "version": "1.0.0",
+  "description": "Backend API for CloudDevOpsHub LinkedIn Leaderboard",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node src/utils/seedData.js"
+  },
+  "dependencies": {
+    "apify-client": "^2.9.4",
+    "axios": "^1.7.9",
+    "bullmq": "^6.3.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ioredis": "^6.0.0",
+    "mongoose": "^8.8.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}
