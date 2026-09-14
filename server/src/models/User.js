@@ -13,6 +13,14 @@ const userSchema = new mongoose.Schema(
       trim: true,
       unique: true,
     },
+    linkedinUsername: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
     batch: {
       type: String,
       required: [true, 'Batch identifier is required'],

@@ -41,13 +41,24 @@ exports.getLeaderboard = async (req, res) => {
       if (timeframe === 'all-time') {
         normalized.sort((a, b) => b.totalPoints - a.totalPoints || b.verifiedPostsCount - a.verifiedPostsCount);
         normalized.forEach((u, i) => { u.rank = i + 1; });
+        users = normalized;
       } else {
-        // Weekly ranking
-        normalized.sort((a, b) => (b.weeklyPoints || 0) - (a.weeklyPoints || 0) || b.totalPoints - a.totalPoints);
-        normalized.forEach((u, i) => { u.rank = i + 1; u.weeklyRank = i + 1; });
+        // Weekly ranking: strictly include members who submitted and scored in the current week cycle
+        const weeklyUsers = normalized.filter(
+          (u) => u.currentWeekId === currentWeekId && (u.weeklyPoints > 0 || u.weeklyVerifiedPostsCount > 0)
+        );
+        weeklyUsers.sort(
+          (a, b) =>
+            (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
+            (b.weeklyVerifiedPostsCount || 0) - (a.weeklyVerifiedPostsCount || 0) ||
+            b.totalPoints - a.totalPoints
+        );
+        weeklyUsers.forEach((u, i) => {
+          u.rank = i + 1;
+          u.weeklyRank = i + 1;
+        });
+        users = weeklyUsers;
       }
-
-      users = normalized;
     } else {
       let filtered = inMemoryUsers.map((u) => {
         const obj = { ...u };
@@ -76,12 +87,24 @@ exports.getLeaderboard = async (req, res) => {
       if (timeframe === 'all-time') {
         filtered.sort((a, b) => b.totalPoints - a.totalPoints || b.verifiedPostsCount - a.verifiedPostsCount);
         filtered.forEach((u, i) => { u.rank = i + 1; });
+        users = filtered;
       } else {
-        filtered.sort((a, b) => (b.weeklyPoints || 0) - (a.weeklyPoints || 0) || b.totalPoints - a.totalPoints);
-        filtered.forEach((u, i) => { u.rank = i + 1; u.weeklyRank = i + 1; });
+        // Weekly ranking: strictly include members who submitted and scored in the current week cycle
+        const weeklyFiltered = filtered.filter(
+          (u) => u.currentWeekId === currentWeekId && (u.weeklyPoints > 0 || u.weeklyVerifiedPostsCount > 0)
+        );
+        weeklyFiltered.sort(
+          (a, b) =>
+            (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
+            (b.weeklyVerifiedPostsCount || 0) - (a.weeklyVerifiedPostsCount || 0) ||
+            b.totalPoints - a.totalPoints
+        );
+        weeklyFiltered.forEach((u, i) => {
+          u.rank = i + 1;
+          u.weeklyRank = i + 1;
+        });
+        users = weeklyFiltered;
       }
-
-      users = filtered;
     }
 
     return res.status(200).json({

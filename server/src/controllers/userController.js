@@ -5,11 +5,12 @@ const { getDBStatus } = require('../config/db');
 const { inMemoryUsers, inMemoryPosts } = require('../utils/seedData');
 const { BATCH_45_MODULES } = require('../config/badgeConfig');
 const { enqueueProfileSync, getJobStatus, processProfileSync } = require('../services/queueService');
-const { getCurrentWeekId, getWeekDateRange } = require('../utils/weekUtils');
+const { getCurrentWeekId, getWeekDateRange, isDateInWeek } = require('../utils/weekUtils');
+const { extractLinkedInUsername, canonicalizeLinkedInUrl } = require('../services/apifyScraper');
 
 /**
  * Submit or sync a user's LinkedIn profile via background job queue
- * Rules: Users can submit strictly once per week.
+ * Rules: Strict single identity and once-per-week submission.
  */
 exports.submitUserProfile = async (req, res) => {
   try {
@@ -22,36 +23,95 @@ exports.submitUserProfile = async (req, res) => {
       });
     }
 
-    const cleanUrl = linkedinUrl.trim().replace(/\/+$/, '');
     const cleanName = name.trim();
     const cleanBatch = (batch || 'Batch 44').trim();
+    const cleanUsername = extractLinkedInUsername(linkedinUrl);
+
+    if (!cleanUsername || cleanUsername.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid LinkedIn profile URL (e.g., https://www.linkedin.com/in/yourname).',
+      });
+    }
+
+    const canonicalUrl = canonicalizeLinkedInUrl(linkedinUrl);
     const currentWeekId = getCurrentWeekId();
     const weekInfo = getWeekDateRange(currentWeekId);
     const isDB = getDBStatus();
 
-    // Check if user has already submitted for the current weekly cycle
+    // 1. Check if this LinkedIn profile is already registered under a DIFFERENT name
     let existingUser = null;
     if (isDB) {
-      existingUser = await User.findOne({ linkedinUrl: cleanUrl });
+      existingUser = await User.findOne({
+        $or: [
+          { linkedinUsername: cleanUsername },
+          { linkedinUrl: canonicalUrl },
+          { linkedinUrl: linkedinUrl.trim().replace(/\/+$/, '') },
+        ],
+      });
     } else {
-      existingUser = inMemoryUsers.find((u) => u.linkedinUrl === cleanUrl);
+      existingUser = inMemoryUsers.find(
+        (u) =>
+          (u.linkedinUsername && u.linkedinUsername === cleanUsername) ||
+          u.linkedinUrl === canonicalUrl ||
+          u.linkedinUrl === linkedinUrl.trim().replace(/\/+$/, '')
+      );
     }
 
-    if (existingUser && existingUser.currentWeekId === currentWeekId && existingUser.lastWeeklySubmissionAt) {
+    if (existingUser && existingUser.name && existingUser.name.toLowerCase() !== cleanName.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        duplicateProfile: true,
+        message: `This LinkedIn profile is already registered under "${existingUser.name}". To prevent duplicate rankings, profiles cannot be submitted under multiple names.`,
+      });
+    }
+
+    // 2. Check if this Name is already registered with a DIFFERENT LinkedIn profile
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let existingNameUser = null;
+    if (isDB) {
+      existingNameUser = await User.findOne({
+        name: new RegExp(`^${escapeRegex(cleanName)}$`, 'i'),
+      });
+    } else {
+      existingNameUser = inMemoryUsers.find(
+        (u) => u.name && u.name.toLowerCase() === cleanName.toLowerCase()
+      );
+    }
+
+    if (existingNameUser) {
+      const regUser = existingNameUser.linkedinUsername || extractLinkedInUsername(existingNameUser.linkedinUrl);
+      if (regUser && regUser !== cleanUsername) {
+        return res.status(400).json({
+          success: false,
+          duplicateName: true,
+          message: `A member with the name "${cleanName}" is already registered with a different LinkedIn profile. Duplicate submissions are not permitted.`,
+        });
+      }
+    }
+
+    // 3. Strict weekly submission check: only once per week
+    if (
+      existingUser &&
+      existingUser.currentWeekId === currentWeekId &&
+      existingUser.lastWeeklySubmissionAt &&
+      isDateInWeek(existingUser.lastWeeklySubmissionAt, currentWeekId)
+    ) {
       return res.status(400).json({
         success: false,
         alreadySubmitted: true,
         weekId: currentWeekId,
-        message: 'You have already submitted your profile for this week. Each member can submit once per week. Your next submission window opens next Monday!',
+        message: `You have already submitted your profile for this week (${currentWeekId}). Each member can submit strictly once per week. Your next submission window opens next Monday!`,
       });
     }
 
-    console.log(`📥 Received submission request for: ${cleanName} (${cleanUrl}) [Batch: ${cleanBatch}, Week: ${currentWeekId}]`);
+    console.log(`📥 Received submission request for: ${cleanName} (${canonicalUrl}) [Handle: ${cleanUsername}, Batch: ${cleanBatch}, Week: ${currentWeekId}]`);
 
     // Enqueue profile sync in Redis/In-Memory background queue
     const queueResult = await enqueueProfileSync({
       name: cleanName,
-      linkedinUrl: cleanUrl,
+      linkedinUrl: canonicalUrl,
+      linkedinUsername: cleanUsername,
       batch: cleanBatch,
       weekId: currentWeekId,
     });

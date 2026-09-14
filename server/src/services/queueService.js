@@ -4,7 +4,7 @@ const User = require('../models/User');
 const Post = require('../models/Post');
 const { getDBStatus } = require('../config/db');
 const { inMemoryUsers, inMemoryPosts } = require('../utils/seedData');
-const { scrapeLinkedInPosts, extractLinkedInUsername } = require('./apifyScraper');
+const { scrapeLinkedInPosts, extractLinkedInUsername, canonicalizeLinkedInUrl } = require('./apifyScraper');
 const { analyzePostsBatchWithAI } = require('./aiAnalyzer');
 const { calculatePostPoints, evaluateModuleExpertStatus, evaluateBatch45Badges } = require('./pointsEngine');
 const { getCurrentWeekId, isDateInWeek } = require('../utils/weekUtils');
@@ -24,7 +24,8 @@ let isInMemoryProcessing = false;
  */
 async function processProfileSync(jobData, updateProgress) {
   const { name, linkedinUrl, batch } = jobData;
-  const cleanUrl = linkedinUrl.trim().replace(/\/+$/, '');
+  const cleanUsername = jobData.linkedinUsername || extractLinkedInUsername(linkedinUrl);
+  const cleanUrl = canonicalizeLinkedInUrl(linkedinUrl);
   const cleanName = name.trim();
   const cleanBatch = (batch || 'Batch 44').trim();
   const currentWeekId = jobData.weekId || getCurrentWeekId();
@@ -114,10 +115,18 @@ async function processProfileSync(jobData, updateProgress) {
   let savedPosts = [];
 
   if (isDB) {
-    let user = await User.findOne({ linkedinUrl: cleanUrl });
+    let user = await User.findOne({
+      $or: [
+        { linkedinUsername: cleanUsername },
+        { linkedinUrl: cleanUrl },
+        { linkedinUrl: jobData.linkedinUrl },
+      ],
+    });
     if (user) {
       user.name = cleanName;
       user.batch = cleanBatch;
+      user.linkedinUrl = cleanUrl;
+      user.linkedinUsername = cleanUsername;
       user.verifiedPostsCount = verifiedCount;
       user.totalPostsScraped = rawPosts.length;
       user.totalPoints = totalPoints;
@@ -136,6 +145,7 @@ async function processProfileSync(jobData, updateProgress) {
       user = await User.create({
         name: cleanName,
         linkedinUrl: cleanUrl,
+        linkedinUsername: cleanUsername,
         batch: cleanBatch,
         avatarUrl,
         verifiedPostsCount: verifiedCount,
@@ -180,13 +190,19 @@ async function processProfileSync(jobData, updateProgress) {
     userRecord = await User.findById(user._id);
   } else {
     // In-memory fallback
-    let existingIndex = inMemoryUsers.findIndex((u) => u.linkedinUrl === cleanUrl);
+    let existingIndex = inMemoryUsers.findIndex(
+      (u) =>
+        (u.linkedinUsername && u.linkedinUsername === cleanUsername) ||
+        u.linkedinUrl === cleanUrl ||
+        u.linkedinUrl === jobData.linkedinUrl
+    );
     const userId = existingIndex !== -1 ? inMemoryUsers[existingIndex]._id : `user_${Date.now()}`;
 
     const updatedUser = {
       _id: userId,
       name: cleanName,
       linkedinUrl: cleanUrl,
+      linkedinUsername: cleanUsername,
       batch: cleanBatch,
       avatarUrl,
       verifiedPostsCount: verifiedCount,

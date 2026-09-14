@@ -1,21 +1,50 @@
 const { ApifyClient } = require('apify-client');
 
 /**
- * Normalizes a LinkedIn profile URL or extracts username
+ * Normalizes any LinkedIn profile URL or string into a pure, lowercase canonical username
  */
 function extractLinkedInUsername(url) {
-  if (!url) return 'devops-enthusiast';
+  if (!url || typeof url !== 'string') return '';
   try {
-    const cleaned = url.replace(/\/+$/, '');
-    const parts = cleaned.split('/');
-    const userIndex = parts.findIndex((p) => p.includes('in') || p.includes('linkedin.com'));
-    if (userIndex !== -1 && parts[userIndex + 1]) {
-      return parts[userIndex + 1].split('?')[0];
+    let clean = url.trim().toLowerCase();
+    // Remove protocol
+    clean = clean.replace(/^https?:\/\//, '');
+    // Remove query params and hash fragments
+    clean = clean.split('?')[0].split('#')[0];
+    // Remove trailing and leading slashes
+    clean = clean.replace(/^\/+|\/+$/g, '');
+
+    // Handle linkedin domain variations (www.linkedin.com, in.linkedin.com, linkedin.com, etc.)
+    if (clean.includes('linkedin.com')) {
+      const parts = clean.split('/');
+      // Remove 'recent-activity', 'posts', 'detail' if passed
+      const inIdx = parts.findIndex((p) => p === 'in' || p === 'pub');
+      if (inIdx !== -1 && parts[inIdx + 1]) {
+        return parts[inIdx + 1].trim();
+      }
+      const last = parts[parts.length - 1];
+      if (last && !last.includes('linkedin.com')) {
+        return last.trim();
+      }
+    } else {
+      if (clean.startsWith('in/')) {
+        return clean.substring(3).trim();
+      }
+      return clean.trim();
     }
-    return parts[parts.length - 1].split('?')[0] || 'devops-enthusiast';
+    return clean;
   } catch {
-    return 'devops-enthusiast';
+    return '';
   }
+}
+
+/**
+ * Returns canonical LinkedIn profile URL: https://www.linkedin.com/in/<username>
+ */
+function canonicalizeLinkedInUrl(rawUrl) {
+  const username = extractLinkedInUsername(rawUrl);
+  if (!username) return (rawUrl || '').trim();
+  return `https://www.linkedin.com/in/${username}`;
 }
 
 /**
@@ -199,5 +228,6 @@ async function scrapeLinkedInPosts(profileUrl, userName) {
 module.exports = {
   scrapeLinkedInPosts,
   extractLinkedInUsername,
+  canonicalizeLinkedInUrl,
 };
 

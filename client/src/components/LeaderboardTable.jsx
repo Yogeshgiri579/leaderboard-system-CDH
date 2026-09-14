@@ -181,9 +181,21 @@ Leaderboard: ${currentUrl}
           <tbody>
             {users.length === 0 ? (
               <tr>
-                <td colSpan={7} className="empty-state">
-                  <p>No members found in this view.</p>
-                  <button className="btn btn-dark btn-sm" onClick={onOpenSubmit}>Submit your profile now</button>
+                <td colSpan={7} className="empty-state" style={{ padding: '3.5rem 1.5rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
+                    {timeframe === 'weekly' ? '⚡' : '🔍'}
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a', marginBottom: '0.35rem' }}>
+                    {timeframe === 'weekly' ? 'New Weekly Cycle Started!' : 'No members found'}
+                  </div>
+                  <p style={{ color: '#64748b', fontSize: '0.85rem', maxWidth: '420px', margin: '0 auto 1.25rem' }}>
+                    {timeframe === 'weekly'
+                      ? 'Weekly leaderboard has reset. No submissions have been recorded yet for this weekly cycle. Be the first to sync your profile and claim Rank #1!'
+                      : 'Try adjusting your search query or selecting a different batch filter.'}
+                  </p>
+                  <button className="btn btn-dark btn-sm" onClick={onOpenSubmit}>
+                    {timeframe === 'weekly' ? 'Submit Profile & Claim #1' : 'Submit your profile now'}
+                  </button>
                 </td>
               </tr>
             ) : users.map((user, i) => {
