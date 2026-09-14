@@ -12,8 +12,51 @@ function RankBadge({ rank }) {
   return <span className={cls}>#{rank}</span>;
 }
 
+function TableSkeletonRows({ count = 6 }) {
+  return (
+    <>
+      {Array.from({ length: count }).map((_, idx) => (
+        <tr key={`skeleton-${idx}`} className="skeleton-pulse" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <td style={{ textAlign: 'center', padding: '0.85rem 0.5rem' }}>
+            <div style={{ width: '28px', height: '26px', borderRadius: '6px', background: '#e2e8f0', margin: '0 auto' }} />
+          </td>
+          <td style={{ padding: '0.85rem 0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: '#e2e8f0', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ width: '120px', height: '13px', borderRadius: '4px', background: '#cbd5e1', marginBottom: '6px' }} />
+                <div style={{ width: '80px', height: '10px', borderRadius: '4px', background: '#e2e8f0' }} />
+              </div>
+            </div>
+          </td>
+          <td>
+            <div style={{ width: '65px', height: '20px', borderRadius: '9999px', background: '#f1f5f9' }} />
+          </td>
+          <td style={{ textAlign: 'center' }}>
+            <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'center' }}>
+              <div style={{ width: '26px', height: '26px', borderRadius: '4px', background: '#e2e8f0' }} />
+              <div style={{ width: '26px', height: '26px', borderRadius: '4px', background: '#e2e8f0' }} />
+              <div style={{ width: '26px', height: '26px', borderRadius: '4px', background: '#e2e8f0' }} />
+            </div>
+          </td>
+          <td style={{ textAlign: 'center' }}>
+            <div style={{ width: '36px', height: '18px', borderRadius: '9999px', background: '#e2e8f0', margin: '0 auto' }} />
+          </td>
+          <td style={{ textAlign: 'center' }}>
+            <div style={{ width: '45px', height: '16px', borderRadius: '4px', background: '#cbd5e1', margin: '0 auto' }} />
+          </td>
+          <td style={{ textAlign: 'right' }}>
+            <div style={{ width: '75px', height: '26px', borderRadius: '6px', background: '#f1f5f9', marginLeft: 'auto' }} />
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
 export default function LeaderboardTable({
   users = [],
+  loading = false,
   selectedBatch,
   setSelectedBatch,
   batches = ['All'],
@@ -179,7 +222,9 @@ Leaderboard: ${currentUrl}
             </tr>
           </thead>
           <tbody>
-            {users.length === 0 ? (
+            {loading && users.length === 0 ? (
+              <TableSkeletonRows count={6} />
+            ) : users.length === 0 ? (
               <tr>
                 <td colSpan={7} className="empty-state" style={{ padding: '3.5rem 1.5rem', textAlign: 'center' }}>
                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>
