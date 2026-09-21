@@ -43,10 +43,10 @@ exports.getLeaderboard = async (req, res) => {
         normalized.forEach((u, i) => { u.rank = i + 1; });
         users = normalized;
       } else {
-        // Weekly ranking: include all cohort members!
-        // Members who submitted and scored this week appear at the top,
-        // and other batch members are also visible below (with 0 weekly pts) sorted by total points.
-        const weeklyUsers = [...normalized];
+        // Weekly ranking: ONLY include members who have submitted / synced their profile in the current week cycle!
+        // If a member submitted this week, they ARE included even if their points are 0.
+        // Members who did NOT submit this week are excluded.
+        const weeklyUsers = normalized.filter((u) => u.currentWeekId === currentWeekId);
         weeklyUsers.sort(
           (a, b) =>
             (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
@@ -89,8 +89,8 @@ exports.getLeaderboard = async (req, res) => {
         filtered.forEach((u, i) => { u.rank = i + 1; });
         users = filtered;
       } else {
-        // Weekly ranking in-memory: include all cohort members
-        const weeklyFiltered = [...filtered];
+        // Weekly ranking in-memory: only members who submitted this week
+        const weeklyFiltered = filtered.filter((u) => u.currentWeekId === currentWeekId);
         weeklyFiltered.sort(
           (a, b) =>
             (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
