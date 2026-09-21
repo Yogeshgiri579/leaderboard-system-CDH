@@ -86,8 +86,13 @@ async function processProfileSync(jobData, updateProgress) {
       totalPoints += points;
       verifiedPostsList.push(postRecord);
 
-      // Check if post was published in the current week cycle
-      if (postWeekId === currentWeekId || isDateInWeek(postRecord.postedAt, currentWeekId)) {
+      // Check if post was published in the current week cycle or within the rolling 7-day window
+      const postDate = postRecord.postedAt ? new Date(postRecord.postedAt) : null;
+      const now = new Date();
+      const diffMs = postDate ? now.getTime() - postDate.getTime() : -1;
+      const isWithin7Days = diffMs >= 0 && diffMs <= (7 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000);
+
+      if (postWeekId === currentWeekId || isDateInWeek(postRecord.postedAt, currentWeekId) || isWithin7Days) {
         weeklyVerifiedCount++;
         weeklyPoints += points;
       }

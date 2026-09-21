@@ -23,16 +23,16 @@ export default function App() {
   // In-memory cache to enable 0ms instant tab switching between weekly and all-time
   const cacheRef = useRef(new Map());
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async (batch) => {
     try {
-      const st = await fetchCommunityStats();
+      const st = await fetchCommunityStats(batch);
       setStats(st.stats || null);
       if (st.stats?.batches) setBatches(st.stats.batches);
       if (st.week) setWeekInfo(st.week);
     } catch (e) {
       console.error('Stats error:', e);
     }
-  };
+  }, []);
 
   const loadLeaderboard = useCallback(async (batch, search, tf) => {
     const cacheKey = `${tf}_${batch}_${(search || '').trim().toLowerCase()}`;
@@ -60,10 +60,10 @@ export default function App() {
     }
   }, []);
 
-  // Fetch community stats once on mount
+  // Fetch community stats when selectedBatch changes
   useEffect(() => {
-    loadStats();
-  }, []);
+    loadStats(selectedBatch);
+  }, [selectedBatch, loadStats]);
 
   // Fetch leaderboard when filters or timeframe change
   useEffect(() => {
@@ -106,7 +106,7 @@ export default function App() {
         onClose={() => setIsSubmitOpen(false)}
         onSuccess={(u) => {
           cacheRef.current.clear();
-          loadStats();
+          loadStats(selectedBatch);
           loadLeaderboard(selectedBatch, searchTerm, timeframe);
         }}
         onViewPosts={(u) => { if (u) setSelectedUser(u); }}

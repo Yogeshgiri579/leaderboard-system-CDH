@@ -126,6 +126,7 @@ exports.getLeaderboard = async (req, res) => {
  */
 exports.getCommunityStats = async (req, res) => {
   try {
+    const { batch } = req.query;
     const isDB = getDBStatus();
     const currentWeekId = getCurrentWeekId();
     const weekInfo = getWeekDateRange(currentWeekId);
@@ -140,12 +141,18 @@ exports.getCommunityStats = async (req, res) => {
     let batches = [];
 
     if (isDB) {
-      totalMembers = await User.countDocuments();
-      const users = await User.find();
+      batches = await User.distinct('batch');
+      const query = {};
+      if (batch && batch !== 'All') {
+        const cleanBatch = batch.replace(/\s*\(.*?\)/, '').trim();
+        query.batch = new RegExp(cleanBatch, 'i');
+      }
+
+      totalMembers = await User.countDocuments(query);
+      const users = await User.find(query);
       totalVerifiedPosts = users.reduce((acc, curr) => acc + (curr.verifiedPostsCount || 0), 0);
       totalPointsAwarded = users.reduce((acc, curr) => acc + (curr.totalPoints || 0), 0);
-      totalModuleExperts = await User.countDocuments({ isModuleExpert: true });
-      batches = await User.distinct('batch');
+      totalModuleExperts = users.filter((u) => u.isModuleExpert).length;
 
       users.forEach((u) => {
         if (u.currentWeekId === currentWeekId) {
@@ -155,13 +162,19 @@ exports.getCommunityStats = async (req, res) => {
         }
       });
     } else {
-      totalMembers = inMemoryUsers.length;
-      totalVerifiedPosts = inMemoryUsers.reduce((acc, curr) => acc + (curr.verifiedPostsCount || 0), 0);
-      totalPointsAwarded = inMemoryUsers.reduce((acc, curr) => acc + (curr.totalPoints || 0), 0);
-      totalModuleExperts = inMemoryUsers.filter((u) => u.isModuleExpert).length;
       batches = Array.from(new Set(inMemoryUsers.map((u) => u.batch)));
+      let filtered = [...inMemoryUsers];
+      if (batch && batch !== 'All') {
+        const cleanBatch = batch.replace(/\s*\(.*?\)/, '').trim().toLowerCase();
+        filtered = filtered.filter((u) => (u.batch || '').toLowerCase().includes(cleanBatch));
+      }
 
-      inMemoryUsers.forEach((u) => {
+      totalMembers = filtered.length;
+      totalVerifiedPosts = filtered.reduce((acc, curr) => acc + (curr.verifiedPostsCount || 0), 0);
+      totalPointsAwarded = filtered.reduce((acc, curr) => acc + (curr.totalPoints || 0), 0);
+      totalModuleExperts = filtered.filter((u) => u.isModuleExpert).length;
+
+      filtered.forEach((u) => {
         if (u.currentWeekId === currentWeekId) {
           weeklyPointsAwarded += u.weeklyPoints || 0;
           weeklyVerifiedPosts += u.weeklyVerifiedPostsCount || 0;

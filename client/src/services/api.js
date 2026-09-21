@@ -23,8 +23,10 @@ export const fetchLeaderboard = async (params = {}) => {
   return response.data;
 };
 
-export const fetchCommunityStats = async () => {
-  const response = await api.get('/leaderboard/stats');
+export const fetchCommunityStats = async (batch) => {
+  const params = {};
+  if (batch && batch !== 'All') params.batch = batch;
+  const response = await api.get('/leaderboard/stats', { params });
   return response.data;
 };
 
