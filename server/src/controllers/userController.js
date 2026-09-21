@@ -24,7 +24,7 @@ exports.submitUserProfile = async (req, res) => {
     }
 
     const cleanName = name.trim();
-    const cleanBatch = (batch || 'Batch 44').trim();
+    const cleanBatch = (batch || 'Batch 45').trim();
     const cleanUsername = extractLinkedInUsername(linkedinUrl);
 
     if (!cleanUsername || cleanUsername.length < 2) {

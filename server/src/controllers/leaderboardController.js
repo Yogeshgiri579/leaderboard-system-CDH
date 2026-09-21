@@ -43,15 +43,15 @@ exports.getLeaderboard = async (req, res) => {
         normalized.forEach((u, i) => { u.rank = i + 1; });
         users = normalized;
       } else {
-        // Weekly ranking: strictly include members who submitted and scored in the current week cycle
-        const weeklyUsers = normalized.filter(
-          (u) => u.currentWeekId === currentWeekId && (u.weeklyPoints > 0 || u.weeklyVerifiedPostsCount > 0)
-        );
+        // Weekly ranking: include all cohort members!
+        // Members who submitted and scored this week appear at the top,
+        // and other batch members are also visible below (with 0 weekly pts) sorted by total points.
+        const weeklyUsers = [...normalized];
         weeklyUsers.sort(
           (a, b) =>
             (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
             (b.weeklyVerifiedPostsCount || 0) - (a.weeklyVerifiedPostsCount || 0) ||
-            b.totalPoints - a.totalPoints
+            (b.totalPoints || 0) - (a.totalPoints || 0)
         );
         weeklyUsers.forEach((u, i) => {
           u.rank = i + 1;
@@ -89,15 +89,13 @@ exports.getLeaderboard = async (req, res) => {
         filtered.forEach((u, i) => { u.rank = i + 1; });
         users = filtered;
       } else {
-        // Weekly ranking: strictly include members who submitted and scored in the current week cycle
-        const weeklyFiltered = filtered.filter(
-          (u) => u.currentWeekId === currentWeekId && (u.weeklyPoints > 0 || u.weeklyVerifiedPostsCount > 0)
-        );
+        // Weekly ranking in-memory: include all cohort members
+        const weeklyFiltered = [...filtered];
         weeklyFiltered.sort(
           (a, b) =>
             (b.weeklyPoints || 0) - (a.weeklyPoints || 0) ||
             (b.weeklyVerifiedPostsCount || 0) - (a.weeklyVerifiedPostsCount || 0) ||
-            b.totalPoints - a.totalPoints
+            (b.totalPoints || 0) - (a.totalPoints || 0)
         );
         weeklyFiltered.forEach((u, i) => {
           u.rank = i + 1;

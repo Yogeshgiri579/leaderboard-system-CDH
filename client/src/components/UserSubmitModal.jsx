@@ -9,7 +9,7 @@ export default function UserSubmitModal({ isOpen, onClose, onSuccess, onViewPost
   const [form, setForm] = useState({
     name: '',
     linkedinUrl: '',
-    batch: 'Batch 44',
+    batch: 'Batch 45',
   });
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState('');
@@ -32,7 +32,7 @@ export default function UserSubmitModal({ isOpen, onClose, onSuccess, onViewPost
   const handleClose = () => {
     if (loading) return;
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-    setForm({ name: '', linkedinUrl: '', batch: 'Batch 44' });
+    setForm({ name: '', linkedinUrl: '', batch: 'Batch 45' });
     setError('');
     setIsAlreadySubmitted(false);
     setResult(null);
@@ -364,7 +364,7 @@ export default function UserSubmitModal({ isOpen, onClose, onSuccess, onViewPost
               <BatchSelect
                 value={form.batch}
                 onChange={(val) => setForm({ ...form, batch: val })}
-                pinnedBatch="Batch 44"
+                pinnedBatch="Batch 45"
                 placeholder="Select Cohort Batch"
               />
             </div>

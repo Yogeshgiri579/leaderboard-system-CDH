@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 /**
  * Custom Premium Batch Selector Component
  * Features:
- * - Pinned 'Batch 44 (Current Active Cohort)' with glowing badge
+ * - Pinned 'Batch 45 (Current Active Cohort)' with glowing badge
  * - Instant in-dropdown search/filter
  * - Custom styling matching dark/modern aesthetic
  * - Click-outside dismissal & smooth micro-interactions
@@ -12,7 +12,7 @@ export default function BatchSelect({
   value,
   onChange,
   includeAllOption = false,
-  pinnedBatch = 'Batch 44',
+  pinnedBatch = 'Batch 45',
   placeholder = 'Select Cohort Batch',
   style = {},
 }) {
@@ -217,7 +217,7 @@ export default function BatchSelect({
             </div>
           </div>
 
-          {/* Pinned Priority Item (Batch 44) */}
+          {/* Pinned Priority Item (Batch 45) */}
           {!searchTerm && (
             <div style={{ padding: '0.4rem 0.5rem', borderBottom: '1px solid #f1f5f9' }}>
               <div

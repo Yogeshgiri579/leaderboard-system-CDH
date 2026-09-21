@@ -27,7 +27,7 @@ async function processProfileSync(jobData, updateProgress) {
   const cleanUsername = jobData.linkedinUsername || extractLinkedInUsername(linkedinUrl);
   const cleanUrl = canonicalizeLinkedInUrl(linkedinUrl);
   const cleanName = name.trim();
-  const cleanBatch = (batch || 'Batch 44').trim();
+  const cleanBatch = (batch || 'Batch 45').trim();
   const currentWeekId = jobData.weekId || getCurrentWeekId();
   const isDB = getDBStatus();
 

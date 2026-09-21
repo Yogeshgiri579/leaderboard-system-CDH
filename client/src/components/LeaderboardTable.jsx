@@ -199,7 +199,7 @@ Leaderboard: ${currentUrl}
               value={selectedBatch}
               onChange={setSelectedBatch}
               includeAllOption={true}
-              pinnedBatch="Batch 44"
+              pinnedBatch="Batch 45"
               placeholder="All Batches (40 - 50)"
             />
           </div>

@@ -95,7 +95,7 @@ ${currentUrl}
 
         ctx.font = '600 18px "Inter", system-ui, sans-serif';
         ctx.fillStyle = '#34d399';
-        ctx.fillText(`✓ Verified Unlocked · ${user?.batch || 'Batch 44'}`, width / 2, 825);
+        ctx.fillText(`✓ Verified Unlocked · ${user?.batch || 'Batch 45'}`, width / 2, 825);
 
         ctx.font = '500 16px "Inter", system-ui, sans-serif';
         ctx.fillStyle = '#94a3b8';

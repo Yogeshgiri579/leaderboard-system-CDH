@@ -12,7 +12,7 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [batches, setBatches] = useState(['All']);
-  const [selectedBatch, setSelectedBatch] = useState('All');
+  const [selectedBatch, setSelectedBatch] = useState('Batch 45');
   const [searchTerm, setSearchTerm] = useState('');
   const [timeframe, setTimeframe] = useState('weekly'); // 'weekly' or 'all-time'
   const [weekInfo, setWeekInfo] = useState(null);
