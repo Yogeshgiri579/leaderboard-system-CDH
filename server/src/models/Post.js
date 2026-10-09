@@ -50,6 +50,10 @@ const postSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    aiVerdict: {
+      type: String,
+      default: '',
+    },
     detectedKeywords: [
       {
         type: String,

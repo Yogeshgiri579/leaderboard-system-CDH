@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { BATCH_45_MODULES } = require('../config/badgeConfig');
 
 /**
  * Checks for variations of Vikas Ratnawat in the text
@@ -41,7 +42,8 @@ function analyzeKeywordsAndContext(text) {
   if (hasHubTag) detected.push('CloudDevOpsHub');
 
   techKeywords.forEach((kw) => {
-    if (lower.includes(kw)) {
+    const regex = new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'i');
+    if (regex.test(text)) {
       detected.push(kw.toUpperCase());
       topicMatches++;
     }
@@ -54,21 +56,78 @@ function analyzeKeywordsAndContext(text) {
   };
 }
 
-const { BATCH_45_MODULES } = require('../config/badgeConfig');
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
- * Classifies which of the 10 Batch 45 curriculum modules a post matches
+ * Filter out trailing hashtag walls so generic hashtags don't spam 6-8 modules simultaneously
  */
-function classifyPostModules(text, detectedKeywords = []) {
-  if (!text) return [];
-  const lower = text.toLowerCase();
+function stripTrailingHashtagsAndFooters(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const cleanLines = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      cleanLines.push(line);
+      continue;
+    }
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const hashtagWords = words.filter((w) => w.startsWith('#'));
+    // If a line is predominantly hashtags (e.g., #DevOps #AWS #Docker #Kubernetes ...)
+    if (words.length > 0 && hashtagWords.length / words.length >= 0.6) {
+      continue;
+    }
+    cleanLines.push(line);
+  }
+  return cleanLines.join('\n');
+}
+
+/**
+ * Classifies which of the 10 Batch 45 curriculum modules a post matches using unicode normalization & density
+ */
+function classifyPostModules(rawText, detectedKeywords = []) {
+  if (!rawText) return [];
+  // Normalize mathematical unicode bold/italic fonts commonly used on LinkedIn
+  const text = rawText.normalize('NFKD');
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const titleHeader = lines.slice(0, 3).join(' ');
+
+  // Clean out lines that are just hashtag walls
+  const cleanLines = lines.filter((l) => {
+    const words = l.split(/\s+/);
+    const hashtags = words.filter((w) => w.startsWith('#'));
+    return !(words.length > 0 && hashtags.length / words.length >= 0.5);
+  });
+  const bodyText = cleanLines.join('\n');
+
   const matched = [];
 
   BATCH_45_MODULES.forEach((mod) => {
-    const hasMatch = mod.keywords.some(
-      (kw) => lower.includes(kw.toLowerCase()) || detectedKeywords.some((dk) => dk.toLowerCase().includes(kw.toLowerCase()))
+    let isMatch = false;
+
+    // 1. Direct mention in title/heading lines
+    const titleHit = mod.keywords.some((kw) =>
+      new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'i').test(titleHeader)
     );
-    if (hasMatch) {
+    if (titleHit) {
+      isMatch = true;
+    } else {
+      // 2. In body, require at least 2 keyword occurrences to prevent single passing bullet mentions
+      let matches = 0;
+      mod.keywords.forEach((kw) => {
+        const regex = new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'gi');
+        const count = (bodyText.match(regex) || []).length;
+        matches += count;
+      });
+
+      if (matches >= 2) {
+        isMatch = true;
+      }
+    }
+
+    if (isMatch) {
       matched.push(mod.id);
     }
   });
@@ -86,14 +145,13 @@ async function analyzePostWithAI(postText) {
 
 /**
  * Analyze a batch of up to 20 posts in a SINGLE prompt using Gemini Flash or robust NLP fallback
- * This reduces API calls by up to 95%, eliminates rate limits, and speeds up verification 10x!
  */
 async function analyzePostsBatchWithAI(rawPosts = []) {
   if (!rawPosts || rawPosts.length === 0) return [];
 
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  // Pre-process all posts with fast local heuristics
+  // Pre-process all posts with strict local heuristics
   const preProcessed = rawPosts.map((raw, idx) => {
     const text = raw.postText || '';
     const mentionsVikas = checkVikasRatnawatMention(text);
@@ -118,19 +176,20 @@ async function analyzePostsBatchWithAI(rawPosts = []) {
     try {
       const postsForPrompt = preProcessed.map((p) => ({
         index: p.index,
-        content: p.postText.substring(0, 500), // Trim long posts to keep token size compact
+        content: p.postText.substring(0, 500),
       }));
 
       const prompt = `You are the chief AI auditor for CloudDevOpsHub Batch 45 (Multi-Cloud & DevOps With AI, mentored by Vikas Ratnawat).
 Analyze these ${postsForPrompt.length} LinkedIn posts.
 
 For each post determine:
-1. isRelevant: boolean (related to CloudDevOpsHub cohort learning, DevOps, Cloud, or AI concepts)
+1. isRelevant: boolean (strictly related to hands-on learning in CloudDevOpsHub cohort, DevOps, Cloud, or AI concepts)
 2. mentionsVikasRatnawat: boolean (mentions or tags Vikas Ratnawat, Vikas Sir, or @vikas)
 3. aiRelevanceScore: number (0 to 100 confidence/quality score)
 4. aiReasoning: string (concise 1-sentence explanation of what DevOps concept was covered)
 5. matchedModuleIds: array of strings from available modules [MOD_01, MOD_02, MOD_03, MOD_04, MOD_05, MOD_06, MOD_07, MOD_08, MOD_09, MOD_10]
-(MOD_01:Foundations&AI, MOD_02:Linux+GCP, MOD_03:AWS, MOD_04:CICD&Git, MOD_05:Docker&K8s, MOD_06:Terraform&Ansible, MOD_07:Python&Shell, MOD_08:Azure&GenAI, MOD_09:9RealProjects, MOD_10:Career&Referrals)
+Assign ONLY modules that the post genuinely teaches or demonstrates. DO NOT assign a module just because it appears in a hashtag or syllabus list!
+(MOD_01:Foundations&AI, MOD_02:Linux+GCP+Shell, MOD_03:AWS, MOD_04:CICD&Git, MOD_05:Docker&K8s, MOD_06:Terraform&Ansible, MOD_07:Python&Boto3, MOD_08:Azure&GenAI, MOD_09:9RealProjects, MOD_10:Career&Referrals)
 
 POSTS DATA:
 ${JSON.stringify(postsForPrompt, null, 2)}
@@ -142,13 +201,13 @@ Respond STRICTLY with a valid JSON array of objects:
     "isRelevant": true,
     "mentionsVikasRatnawat": true,
     "aiRelevanceScore": 95,
-    "aiReasoning": "Hands-on multi-region Kubernetes deployment with Terraform and mentor tag.",
-    "matchedModuleIds": ["MOD_03", "MOD_05", "MOD_06"]
+    "aiReasoning": "Hands-on Linux filesystem hierarchy troubleshooting.",
+    "matchedModuleIds": ["MOD_02"]
   }
 ]`;
 
       let response;
-      const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+      const modelsToTry = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
       for (const model of modelsToTry) {
         try {
           response = await axios.post(
@@ -157,7 +216,7 @@ Respond STRICTLY with a valid JSON array of objects:
               contents: [{ parts: [{ text: prompt }] }],
               generationConfig: { responseMimeType: 'application/json' },
             },
-            { timeout: 15000 }
+            { timeout: 20000 }
           );
           if (response?.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
             break;
@@ -170,33 +229,37 @@ Respond STRICTLY with a valid JSON array of objects:
       const jsonText = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (jsonText) {
         const parsedArray = JSON.parse(jsonText);
-        console.log(`🤖 Gemini AI successfully analyzed batch of ${parsedArray.length} posts in ONE single turn!`);
+        console.log(`🤖 Gemini AI successfully analyzed batch of ${parsedArray.length} posts!`);
 
         return preProcessed.map((prep) => {
           const aiResult = parsedArray.find((r) => r.index === prep.index) || {};
           const isRelevant = aiResult.isRelevant ?? prep.hasPotential;
           const mentionsVikas = aiResult.mentionsVikasRatnawat ?? prep.mentionsVikas;
           const score = aiResult.aiRelevanceScore ?? (prep.hasHubTag && mentionsVikas ? 95 : 75);
-          const combinedModules = Array.from(
-            new Set([...(aiResult.matchedModuleIds || []), ...prep.matchedModuleIds])
+
+          // Use AI's matched modules if valid, otherwise fallback to the cleaned heuristic modules
+          const validAiModules = (aiResult.matchedModuleIds || []).filter((id) =>
+            BATCH_45_MODULES.some((m) => m.id === id)
           );
+          const finalModules = validAiModules.length > 0 ? validAiModules : prep.matchedModuleIds;
 
           return {
             isRelevant,
             mentionsVikasRatnawat: mentionsVikas,
             aiRelevanceScore: score,
             aiReasoning: aiResult.aiReasoning || (isRelevant ? 'Verified CloudDevOpsHub community post' : 'General post'),
+            aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
             detectedKeywords: prep.detected,
-            matchedModuleIds: combinedModules,
+            matchedModuleIds: finalModules,
           };
         });
       }
     } catch (batchErr) {
-      console.warn(`⚠️ Gemini batch analysis failed (${batchErr.message}). Using high-fidelity NLP heuristic evaluation.`);
+      console.warn(`⚠️ Gemini batch analysis notice (${batchErr.message}). Using strict word-boundary NLP heuristic evaluation.`);
     }
   }
 
-  // High-Fidelity NLP Heuristics Fallback (Zero external dependencies, instant execution)
+  // High-Fidelity Strict NLP Heuristics Fallback
   return preProcessed.map((prep) => {
     if (!prep.hasPotential) {
       return {
@@ -204,6 +267,7 @@ Respond STRICTLY with a valid JSON array of objects:
         mentionsVikasRatnawat: false,
         aiRelevanceScore: 0,
         aiReasoning: 'General profile post unrelated to CloudDevOpsHub Batch 45 curriculum.',
+        aiVerdict: 'REJECTED',
         detectedKeywords: prep.detected,
         matchedModuleIds: [],
       };
@@ -220,9 +284,9 @@ Respond STRICTLY with a valid JSON array of objects:
 
     let aiReasoning = '';
     if (isRelevant && prep.mentionsVikas) {
-      aiReasoning = `100% Verified Batch 45 Contribution: Hands-on work tagged with mentor Vikas Ratnawat covering ${prep.matchedModuleIds.join(', ') || 'DevOps'}.`;
+      aiReasoning = `Verified Batch 45 Contribution: Hands-on work tagged with mentor Vikas Ratnawat covering ${prep.matchedModuleIds.join(', ') || 'DevOps'}.`;
     } else if (isRelevant && !prep.mentionsVikas) {
-      aiReasoning = `Relevant DevOps post covering ${prep.detected.slice(0, 3).join(', ')}, but lacks direct tag for mentor Vikas Ratnawat.`;
+      aiReasoning = `Relevant DevOps post covering ${prep.detected.slice(0, 3).join(', ')}.`;
     } else {
       aiReasoning = 'Post content does not meet minimum CloudDevOpsHub community relevance thresholds.';
     }
@@ -232,6 +296,7 @@ Respond STRICTLY with a valid JSON array of objects:
       mentionsVikasRatnawat: prep.mentionsVikas,
       aiRelevanceScore: finalScore,
       aiReasoning,
+      aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
       detectedKeywords: prep.detected,
       matchedModuleIds: prep.matchedModuleIds,
     };
@@ -244,4 +309,3 @@ module.exports = {
   checkVikasRatnawatMention,
   classifyPostModules,
 };
-

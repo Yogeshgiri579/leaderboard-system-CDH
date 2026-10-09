@@ -57,6 +57,8 @@ function evaluateModuleExpertStatus(verifiedPostsCount, totalPoints, detectedTag
   };
 }
 
+const { classifyPostModules } = require('./aiAnalyzer');
+
 const MIN_POSTS_PER_BADGE = 5;
 
 /**
@@ -66,21 +68,16 @@ const MIN_POSTS_PER_BADGE = 5;
  * @param {Array} allKeywords - Array of extracted keywords
  */
 function evaluateBatch45Badges(verifiedPosts = [], allKeywords = []) {
-  const keywordsLower = allKeywords.map((k) => k.toLowerCase());
-
   const allBadgesStatus = BATCH_45_MODULES.map((mod) => {
     // Collect all verified posts that match this module category
     const matchingPosts = verifiedPosts.filter((p) => {
-      // 1. AI or classifier explicitly assigned this module ID
-      if (p.matchedModuleIds && p.matchedModuleIds.includes(mod.id)) {
-        return true;
+      // 1. If post already has verified matchedModuleIds, respect them
+      if (Array.isArray(p.matchedModuleIds) && p.matchedModuleIds.length > 0) {
+        return p.matchedModuleIds.includes(mod.id);
       }
-      // 2. Keyword fallback against post text or detected keywords
-      const textLower = (p.postText || '').toLowerCase();
-      const postKeywords = (p.detectedKeywords || []).map((k) => k.toLowerCase());
-      return mod.keywords.some(
-        (kw) => textLower.includes(kw.toLowerCase()) || postKeywords.includes(kw.toLowerCase())
-      );
+      // 2. Strict word-boundary module classifier fallback
+      const classified = classifyPostModules(p.postText, p.detectedKeywords || []);
+      return classified.includes(mod.id);
     });
 
     const postCount = matchingPosts.length;

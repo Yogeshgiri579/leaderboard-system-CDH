@@ -75,6 +75,7 @@ async function processProfileSync(jobData, updateProgress) {
       mentionsVikasRatnawat: analysis.mentionsVikasRatnawat,
       aiRelevanceScore: analysis.aiRelevanceScore,
       aiReasoning: analysis.aiReasoning,
+      aiVerdict: analysis.aiVerdict || (analysis.isRelevant ? 'VERIFIED' : 'REJECTED'),
       detectedKeywords: analysis.detectedKeywords || [],
       matchedModuleIds: analysis.matchedModuleIds || [],
       pointsAwarded: points,
