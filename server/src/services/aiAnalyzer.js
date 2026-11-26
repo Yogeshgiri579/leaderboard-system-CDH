@@ -135,15 +135,15 @@ function classifyPostModules(rawText, detectedKeywords = []) {
   return matched;
 }
 
-function logAnalysisSummary(engine, results) {
+function logAnalysisSummary(engine, results, analysisId) {
   const relevantCount = results.filter((result) => result.isRelevant).length;
   console.log(
-    `[AI] ${engine} analysis complete: posts=${results.length}, relevant=${relevantCount}, rejected=${results.length - relevantCount}`
+    `[AI:${analysisId}] ${engine} analysis complete: posts=${results.length}, relevant=${relevantCount}, rejected=${results.length - relevantCount}`
   );
 
   results.forEach((result, index) => {
     console.log(
-      `[AI] Post ${index + 1}: verdict=${result.isRelevant ? 'VERIFIED' : 'REJECTED'}, score=${result.aiRelevanceScore || 0}, mentorMention=${Boolean(result.mentionsVikasRatnawat)}, modules=${(result.matchedModuleIds || []).join(',') || 'none'}`
+      `[AI:${analysisId}] Post ${index + 1}: verdict=${result.isRelevant ? 'VERIFIED' : 'REJECTED'}, score=${result.aiRelevanceScore || 0}, mentorMention=${Boolean(result.mentionsVikasRatnawat)}, modules=${(result.matchedModuleIds || []).join(',') || 'none'}`
     );
   });
 }
@@ -162,7 +162,9 @@ async function analyzePostWithAI(postText) {
 async function analyzePostsBatchWithAI(rawPosts = []) {
   if (!rawPosts || rawPosts.length === 0) return [];
 
+  const analysisId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const geminiKey = process.env.GEMINI_API_KEY;
+  console.log(`[AI:${analysisId}] Analysis started: posts=${rawPosts.length}`);
 
   // Pre-process all posts with strict local heuristics
   const preProcessed = rawPosts.map((raw, idx) => {
@@ -218,32 +220,35 @@ Respond STRICTLY with a valid JSON array of objects:
   }
 ]`;
 
-    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.8-flash'];
-    let retriesRemaining = 1;
+    const modelsToTry = ['gemini-3.8-flash', 'gemini-3.6-flash'];
     let lastFailure = 'Gemini returned no candidate text';
 
     for (const model of modelsToTry) {
       let attempt = 0;
-      while (attempt < 2) {
+      let retryCount = 0;
+      while (attempt < 3) {
         attempt++;
         const startedAt = Date.now();
-        console.log(`[AI] Gemini request started: model=${model}, attempt=${attempt}, posts=${preProcessed.length}`);
+        console.log(`[AI:${analysisId}] Gemini request started: model=${model}, attempt=${attempt}, posts=${preProcessed.length}`);
 
         try {
           const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
             {
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseMimeType: 'application/json' },
+              generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 4096 },
             },
-            { timeout: 20000 }
+            {
+              timeout: 30000,
+              headers: { 'x-goog-api-key': geminiKey },
+            }
           );
 
           const jsonText = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!jsonText) {
             lastFailure = 'Gemini response contained no candidate text';
             console.warn(
-              `[AI] Gemini returned no candidate text: model=${model}, elapsedMs=${Date.now() - startedAt}`
+              `[AI:${analysisId}] Gemini returned no candidate text: model=${model}, elapsedMs=${Date.now() - startedAt}`
             );
             break;
           }
@@ -276,9 +281,9 @@ Respond STRICTLY with a valid JSON array of objects:
           });
 
           console.log(
-            `[AI] Gemini response parsed: model=${model}, elapsedMs=${Date.now() - startedAt}, returned=${parsedArray.length}`
+            `[AI:${analysisId}] Gemini response parsed: model=${model}, elapsedMs=${Date.now() - startedAt}, returned=${parsedArray.length}`
           );
-          logAnalysisSummary(`Gemini (${model})`, results);
+          logAnalysisSummary(`Gemini (${model})`, results, analysisId);
           return results;
         } catch (mErr) {
           const status = mErr.response?.status;
@@ -288,17 +293,30 @@ Respond STRICTLY with a valid JSON array of objects:
             .slice(0, 300);
           const retryable =
             [429, 500, 502, 503, 504].includes(status) ||
-            ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'ERR_NETWORK'].includes(code);
+            ['ECONNRESET', 'ERR_NETWORK'].includes(code);
+          const maxRetries = status === 503 ? 2 : 1;
 
           lastFailure = status ? `HTTP ${status}` : (code || message);
           console.warn(
-            `[AI] Gemini request failed: model=${model}, attempt=${attempt}, elapsedMs=${Date.now() - startedAt}, status=${status || 'none'}, code=${code || 'none'}, error=${message}`
+            `[AI:${analysisId}] Gemini request failed: model=${model}, attempt=${attempt}, elapsedMs=${Date.now() - startedAt}, status=${status || 'none'}, code=${code || 'none'}, error=${message}`
           );
 
-          if (retryable && retriesRemaining > 0) {
-            retriesRemaining--;
-            console.warn(`[AI] Retrying transient Gemini failure once: model=${model}`);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (retryable && retryCount < maxRetries) {
+            const retryAfter = mErr.response?.headers?.['retry-after'];
+            const retryAfterSeconds = Number(retryAfter);
+            const retryAfterDate = Date.parse(retryAfter);
+            const retryAfterMs = Number.isFinite(retryAfterSeconds)
+              ? retryAfterSeconds * 1000
+              : Number.isNaN(retryAfterDate)
+                ? 0
+                : Math.max(0, retryAfterDate - Date.now());
+            const backoffMs = Math.min(8000, 1000 * (2 ** retryCount));
+            const delayMs = Math.min(30000, Math.max(backoffMs, retryAfterMs)) + Math.floor(Math.random() * 250);
+            retryCount++;
+            console.warn(
+              `[AI:${analysisId}] Retrying transient Gemini failure: model=${model}, retry=${retryCount}/${maxRetries}, delayMs=${delayMs}`
+            );
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
             continue;
           }
 
@@ -308,10 +326,12 @@ Respond STRICTLY with a valid JSON array of objects:
     }
 
     console.warn(
-      `[AI] Gemini unavailable; using local heuristic fallback: posts=${preProcessed.length}, lastFailure=${lastFailure}`
+      `[AI:${analysisId}] Gemini unavailable; using local heuristic fallback: posts=${preProcessed.length}, lastFailure=${lastFailure}`
     );
   } else {
-    console.warn(`[AI] GEMINI_API_KEY is missing; using local heuristic fallback for ${preProcessed.length} posts`);
+    console.warn(
+      `[AI:${analysisId}] GEMINI_API_KEY is missing; using local heuristic fallback for ${preProcessed.length} posts`
+    );
   }
 
   // High-Fidelity Strict NLP Heuristics Fallback
@@ -357,7 +377,7 @@ Respond STRICTLY with a valid JSON array of objects:
     };
   });
 
-  logAnalysisSummary('Local heuristic', heuristicResults);
+  logAnalysisSummary('Local heuristic', heuristicResults, analysisId);
   return heuristicResults;
 }
 
