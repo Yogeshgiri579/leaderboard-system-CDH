@@ -98,10 +98,17 @@ async function processProfileSync(jobData, updateProgress) {
         weeklyPoints += points;
       }
     }
+    console.log(
+      `[JobProcessor] Post ${idx + 1}/${rawPosts.length}: relevant=${postRecord.isRelevant}, aiScore=${postRecord.aiRelevanceScore}, points=${points}, weekId=${postWeekId}`
+    );
     (postRecord.detectedKeywords || []).forEach((k) => allKeywords.add(k));
 
     return postRecord;
   });
+
+  console.log(
+    `[JobProcessor] Analysis scoring complete for ${cleanName}: scraped=${rawPosts.length}, analyzed=${analyzedResults.length}, verified=${verifiedCount}, totalPoints=${totalPoints}, weeklyVerified=${weeklyVerifiedCount}, weeklyPoints=${weeklyPoints}`
+  );
 
   // 3. Evaluate 10-Module Badges & Expert Status
   const badgeEvaluation = evaluateBatch45Badges(verifiedPostsList, Array.from(allKeywords));

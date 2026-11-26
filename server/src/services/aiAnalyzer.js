@@ -135,6 +135,19 @@ function classifyPostModules(rawText, detectedKeywords = []) {
   return matched;
 }
 
+function logAnalysisSummary(engine, results) {
+  const relevantCount = results.filter((result) => result.isRelevant).length;
+  console.log(
+    `[AI] ${engine} analysis complete: posts=${results.length}, relevant=${relevantCount}, rejected=${results.length - relevantCount}`
+  );
+
+  results.forEach((result, index) => {
+    console.log(
+      `[AI] Post ${index + 1}: verdict=${result.isRelevant ? 'VERIFIED' : 'REJECTED'}, score=${result.aiRelevanceScore || 0}, mentorMention=${Boolean(result.mentionsVikasRatnawat)}, modules=${(result.matchedModuleIds || []).join(',') || 'none'}`
+    );
+  });
+}
+
 /**
  * Analyze a single post using Gemini API if configured or high-fidelity heuristic AI
  */
@@ -173,13 +186,12 @@ async function analyzePostsBatchWithAI(rawPosts = []) {
 
   // If Gemini API Key is configured, attempt high-speed single batch inference
   if (geminiKey && geminiKey.trim() !== '') {
-    try {
-      const postsForPrompt = preProcessed.map((p) => ({
-        index: p.index,
-        content: p.postText.substring(0, 500),
-      }));
+    const postsForPrompt = preProcessed.map((p) => ({
+      index: p.index,
+      content: p.postText.substring(0, 500),
+    }));
 
-      const prompt = `You are the chief AI auditor for CloudDevOpsHub Batch 45 (Multi-Cloud & DevOps With AI, mentored by Vikas Ratnawat).
+    const prompt = `You are the chief AI auditor for CloudDevOpsHub Batch 45 (Multi-Cloud & DevOps With AI, mentored by Vikas Ratnawat).
 Analyze these ${postsForPrompt.length} LinkedIn posts.
 
 For each post determine:
@@ -206,11 +218,19 @@ Respond STRICTLY with a valid JSON array of objects:
   }
 ]`;
 
-      let response;
-      const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.8-flash'];
-      for (const model of modelsToTry) {
+    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.8-flash'];
+    let retriesRemaining = 1;
+    let lastFailure = 'Gemini returned no candidate text';
+
+    for (const model of modelsToTry) {
+      let attempt = 0;
+      while (attempt < 2) {
+        attempt++;
+        const startedAt = Date.now();
+        console.log(`[AI] Gemini request started: model=${model}, attempt=${attempt}, posts=${preProcessed.length}`);
+
         try {
-          response = await axios.post(
+          const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
             {
               contents: [{ parts: [{ text: prompt }] }],
@@ -218,49 +238,84 @@ Respond STRICTLY with a valid JSON array of objects:
             },
             { timeout: 20000 }
           );
-          if (response?.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+
+          const jsonText = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!jsonText) {
+            lastFailure = 'Gemini response contained no candidate text';
+            console.warn(
+              `[AI] Gemini returned no candidate text: model=${model}, elapsedMs=${Date.now() - startedAt}`
+            );
             break;
           }
+
+          const parsedArray = JSON.parse(jsonText);
+          if (!Array.isArray(parsedArray)) {
+            throw new Error('Gemini response was not a JSON array');
+          }
+
+          const results = preProcessed.map((prep) => {
+            const aiResult = parsedArray.find((r) => r.index === prep.index) || {};
+            const isRelevant = aiResult.isRelevant ?? prep.hasPotential;
+            const mentionsVikas = aiResult.mentionsVikasRatnawat ?? prep.mentionsVikas;
+            const score = aiResult.aiRelevanceScore ?? (prep.hasHubTag && mentionsVikas ? 95 : 75);
+
+            const validAiModules = (aiResult.matchedModuleIds || []).filter((id) =>
+              BATCH_45_MODULES.some((m) => m.id === id)
+            );
+            const finalModules = validAiModules.length > 0 ? validAiModules : prep.matchedModuleIds;
+
+            return {
+              isRelevant,
+              mentionsVikasRatnawat: mentionsVikas,
+              aiRelevanceScore: score,
+              aiReasoning: aiResult.aiReasoning || (isRelevant ? 'Verified CloudDevOpsHub community post' : 'General post'),
+              aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
+              detectedKeywords: prep.detected,
+              matchedModuleIds: finalModules,
+            };
+          });
+
+          console.log(
+            `[AI] Gemini response parsed: model=${model}, elapsedMs=${Date.now() - startedAt}, returned=${parsedArray.length}`
+          );
+          logAnalysisSummary(`Gemini (${model})`, results);
+          return results;
         } catch (mErr) {
-          if (model === modelsToTry[modelsToTry.length - 1]) throw mErr;
+          const status = mErr.response?.status;
+          const code = mErr.code;
+          const message = String(mErr.response?.data?.error?.message || mErr.message || 'Unknown error')
+            .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[redacted]')
+            .slice(0, 300);
+          const retryable =
+            [429, 500, 502, 503, 504].includes(status) ||
+            ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'ERR_NETWORK'].includes(code);
+
+          lastFailure = status ? `HTTP ${status}` : (code || message);
+          console.warn(
+            `[AI] Gemini request failed: model=${model}, attempt=${attempt}, elapsedMs=${Date.now() - startedAt}, status=${status || 'none'}, code=${code || 'none'}, error=${message}`
+          );
+
+          if (retryable && retriesRemaining > 0) {
+            retriesRemaining--;
+            console.warn(`[AI] Retrying transient Gemini failure once: model=${model}`);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            continue;
+          }
+
+          break;
         }
       }
-
-      const jsonText = response?.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (jsonText) {
-        const parsedArray = JSON.parse(jsonText);
-        console.log(`🤖 Gemini AI successfully analyzed batch of ${parsedArray.length} posts!`);
-
-        return preProcessed.map((prep) => {
-          const aiResult = parsedArray.find((r) => r.index === prep.index) || {};
-          const isRelevant = aiResult.isRelevant ?? prep.hasPotential;
-          const mentionsVikas = aiResult.mentionsVikasRatnawat ?? prep.mentionsVikas;
-          const score = aiResult.aiRelevanceScore ?? (prep.hasHubTag && mentionsVikas ? 95 : 75);
-
-          // Use AI's matched modules if valid, otherwise fallback to the cleaned heuristic modules
-          const validAiModules = (aiResult.matchedModuleIds || []).filter((id) =>
-            BATCH_45_MODULES.some((m) => m.id === id)
-          );
-          const finalModules = validAiModules.length > 0 ? validAiModules : prep.matchedModuleIds;
-
-          return {
-            isRelevant,
-            mentionsVikasRatnawat: mentionsVikas,
-            aiRelevanceScore: score,
-            aiReasoning: aiResult.aiReasoning || (isRelevant ? 'Verified CloudDevOpsHub community post' : 'General post'),
-            aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
-            detectedKeywords: prep.detected,
-            matchedModuleIds: finalModules,
-          };
-        });
-      }
-    } catch (batchErr) {
-      console.warn(`⚠️ Gemini batch analysis notice (${batchErr.message}). Using strict word-boundary NLP heuristic evaluation.`);
     }
+
+    console.warn(
+      `[AI] Gemini unavailable; using local heuristic fallback: posts=${preProcessed.length}, lastFailure=${lastFailure}`
+    );
+  } else {
+    console.warn(`[AI] GEMINI_API_KEY is missing; using local heuristic fallback for ${preProcessed.length} posts`);
   }
 
   // High-Fidelity Strict NLP Heuristics Fallback
-  return preProcessed.map((prep) => {
+  const heuristicResults = preProcessed.map((prep) => {
     if (!prep.hasPotential) {
       return {
         isRelevant: false,
@@ -301,6 +356,9 @@ Respond STRICTLY with a valid JSON array of objects:
       matchedModuleIds: prep.matchedModuleIds,
     };
   });
+
+  logAnalysisSummary('Local heuristic', heuristicResults);
+  return heuristicResults;
 }
 
 module.exports = {
