@@ -207,7 +207,7 @@ Respond STRICTLY with a valid JSON array of objects:
 ]`;
 
       let response;
-      const modelsToTry = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.8-flash'];
+      const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.8-flash'];
       for (const model of modelsToTry) {
         try {
           response = await axios.post(
