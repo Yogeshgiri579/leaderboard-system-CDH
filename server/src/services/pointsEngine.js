@@ -12,8 +12,11 @@ function calculatePostPoints(postAnalysis, likesCount = 0, commentsCount = 0) {
     points += 30; // Mentorship tag bonus
   }
 
-  // Quality score bonus (0 to 25 pts)
-  const qualityBonus = Math.round((postAnalysis.aiRelevanceScore || 0) * 0.25);
+  // Technical-topic depth bonus (0 to 25 pts), independent of AI availability.
+  const topicCount = (postAnalysis.detectedKeywords || []).filter(
+    (keyword) => keyword !== 'CloudDevOpsHub'
+  ).length;
+  const qualityBonus = Math.min(25, topicCount * 5);
   points += qualityBonus;
 
   // Social engagement bonus (up to 20 pts)

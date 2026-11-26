@@ -2,7 +2,7 @@
 
 A full-stack, enterprise-grade community engagement and leaderboard platform designed for the **CloudDevOpsHub** community mentored by **Vikas Ratnawat**.
 
-The platform automatically indexes members' LinkedIn contributions using the **Apify LinkedIn Post Scraper**, audits post semantics and mentor mentions using **AI Content Analysis**, calculates ranked points, awards **Module Expert Badges**, and displays a real-time leaderboard with an interactive UI.
+The platform automatically indexes members' LinkedIn contributions using the **Apify LinkedIn Post Scraper**, applies deterministic eligibility and point rules, uses AI for optional post reasoning and module suggestions, awards **Module Expert Badges**, and displays a real-time leaderboard with an interactive UI.
 
 ---
 
@@ -14,8 +14,8 @@ The platform automatically indexes members' LinkedIn contributions using the **A
   - Filter rankings by Cohort Batch (e.g., Batch 1 - Alpha, Batch 2 - Superstars, Batch 3 - Rising Stars).
 - **📋 Community Participation & Points Rules**:
   - Top instructions detailing how posts are verified and scored.
-  - Mandatory mention validation: Mentor **Vikas Ratnawat** & `#CloudDevOpsHub`.
-  - Base points (+50 pts) + Mentorship tag (+30 pts) + AI depth bonus (up to +25 pts) + Engagement boost.
+  - Eligibility requires a Vikas Ratnawat mention, the `#CloudDevOpsHub` hashtag, and a recognized DevOps topic in post text.
+  - Base points (+50 pts) + Mentorship tag (+30 pts) + technical-topic bonus (up to +25 pts) + engagement boost.
 - **🧭 How to Become a Module Expert Roadmap**:
   - Step-by-step guidance on publishing architecture write-ups and repos.
   - Automated badges: *K8s & Container Master*, *IaC & Infrastructure Architect*, *GitOps & CI/CD Pioneer*, *AWS Cloud Solutions Pro*.
@@ -23,9 +23,8 @@ The platform automatically indexes members' LinkedIn contributions using the **A
   - Scrapes public posts using Apify (`apify-client`).
   - Safe, realistic simulator fallback for zero-downtime local testing without consuming credits.
 - **🤖 AI Post Analyzer**:
-  - Evaluates DevOps technical content (Kubernetes, AWS, Docker, Terraform, CI/CD, Observability).
-  - Verifies presence of mentor tags for Vikas Ratnawat.
-  - Generates transparent reasoning and confidence score for every post.
+  - Adds optional reasoning and curriculum-module suggestions for DevOps posts.
+  - AI availability does not determine eligibility or awarded points.
 - **🔍 Inspect Scraped Posts Modal**:
   - Inspect any member's scraped LinkedIn posts, AI verification status, and earned points.
 

@@ -14,7 +14,6 @@ function checkVikasRatnawatMention(text) {
     'vikas-ratnawat',
     '@vikas',
     'vikas sir',
-    'ratnawat',
   ];
   return patterns.some((pat) => lower.includes(pat));
 }
@@ -24,10 +23,8 @@ function checkVikasRatnawatMention(text) {
  */
 function analyzeKeywordsAndContext(text) {
   if (!text) return { detected: [], hasHubTag: false, devOpsTopicScore: 0 };
-  const lower = text.toLowerCase();
-
-  const communityTerms = ['clouddevopshub', 'cloud devops hub', 'clouddevops hub', 'cloud devopshub'];
-  const hasHubTag = communityTerms.some((t) => lower.includes(t));
+  const hasHubTag = /#clouddevopshub\b/i.test(text);
+  const textWithoutHashtags = text.replace(/#[^\s]+/g, ' ');
 
   const techKeywords = [
     'kubernetes', 'k8s', 'terraform', 'aws', 'docker', 'devops', 'gitops',
@@ -43,7 +40,7 @@ function analyzeKeywordsAndContext(text) {
 
   techKeywords.forEach((kw) => {
     const regex = new RegExp(`\\b${escapeRegExp(kw)}\\b`, 'i');
-    if (regex.test(text)) {
+    if (regex.test(textWithoutHashtags)) {
       detected.push(kw.toUpperCase());
       topicMatches++;
     }
@@ -54,6 +51,24 @@ function analyzeKeywordsAndContext(text) {
     hasHubTag,
     devOpsTopicScore: Math.min(100, topicMatches * 20),
   };
+}
+
+function getEligibilityFailures(prep) {
+  const failures = [];
+  if (!prep.hasHubTag) failures.push('missing #CloudDevOpsHub');
+  if (!prep.mentionsVikas) failures.push('missing Vikas Ratnawat mention');
+  if (prep.devOpsTopicScore < 20) failures.push('no recognized DevOps topic in post text');
+  return failures;
+}
+
+function getLocalRelevanceScore(prep) {
+  let score = 0;
+  if (prep.hasHubTag) score += 50;
+  if (prep.mentionsVikas) score += 40;
+  const topicCount = prep.detected.filter((keyword) => keyword !== 'CloudDevOpsHub').length;
+  score += Math.min(25, topicCount * 5);
+  if (prep.matchedModuleIds.length > 0) score += 10;
+  return Math.min(100, score);
 }
 
 function escapeRegExp(string) {
@@ -143,7 +158,7 @@ function logAnalysisSummary(engine, results, analysisId) {
 
   results.forEach((result, index) => {
     console.log(
-      `[AI:${analysisId}] Post ${index + 1}: verdict=${result.isRelevant ? 'VERIFIED' : 'REJECTED'}, score=${result.aiRelevanceScore || 0}, mentorMention=${Boolean(result.mentionsVikasRatnawat)}, modules=${(result.matchedModuleIds || []).join(',') || 'none'}`
+      `[AI:${analysisId}] Post ${index + 1}: verdict=${result.isRelevant ? 'VERIFIED' : 'REJECTED'}, score=${result.aiRelevanceScore || 0}, mentorMention=${Boolean(result.mentionsVikasRatnawat)}, modules=${(result.matchedModuleIds || []).join(',') || 'none'}, eligibility=${(result.eligibilityFailures || []).join('; ') || 'passed'}`
     );
   });
 }
@@ -172,9 +187,7 @@ async function analyzePostsBatchWithAI(rawPosts = []) {
     const mentionsVikas = checkVikasRatnawatMention(text);
     const { detected, hasHubTag, devOpsTopicScore } = analyzeKeywordsAndContext(text);
     const matchedModuleIds = classifyPostModules(text, detected);
-    const hasPotential = hasHubTag || mentionsVikas || devOpsTopicScore >= 20 || matchedModuleIds.length > 0;
-
-    return {
+    const prep = {
       index: idx,
       postText: text,
       mentionsVikas,
@@ -182,7 +195,13 @@ async function analyzePostsBatchWithAI(rawPosts = []) {
       hasHubTag,
       devOpsTopicScore,
       matchedModuleIds,
-      hasPotential,
+    };
+    const eligibilityFailures = getEligibilityFailures(prep);
+
+    return {
+      ...prep,
+      eligibilityFailures,
+      isRelevant: eligibilityFailures.length === 0,
     };
   });
 
@@ -197,12 +216,11 @@ async function analyzePostsBatchWithAI(rawPosts = []) {
 Analyze these ${postsForPrompt.length} LinkedIn posts.
 
 For each post determine:
-1. isRelevant: boolean (strictly related to hands-on learning in CloudDevOpsHub cohort, DevOps, Cloud, or AI concepts)
-2. mentionsVikasRatnawat: boolean (mentions or tags Vikas Ratnawat, Vikas Sir, or @vikas)
-3. aiRelevanceScore: number (0 to 100 confidence/quality score)
-4. aiReasoning: string (concise 1-sentence explanation of what DevOps concept was covered)
-5. matchedModuleIds: array of strings from available modules [MOD_01, MOD_02, MOD_03, MOD_04, MOD_05, MOD_06, MOD_07, MOD_08, MOD_09, MOD_10]
+1. aiRelevanceScore: number (0 to 100 confidence/quality score)
+2. aiReasoning: string (concise 1-sentence explanation of what DevOps concept was covered)
+3. matchedModuleIds: array of strings from available modules [MOD_01, MOD_02, MOD_03, MOD_04, MOD_05, MOD_06, MOD_07, MOD_08, MOD_09, MOD_10]
 Assign ONLY modules that the post genuinely teaches or demonstrates. DO NOT assign a module just because it appears in a hashtag or syllabus list!
+Do not decide point eligibility; the application applies its own fixed eligibility rules.
 (MOD_01:Foundations&AI, MOD_02:Linux+GCP+Shell, MOD_03:AWS, MOD_04:CICD&Git, MOD_05:Docker&K8s, MOD_06:Terraform&Ansible, MOD_07:Python&Boto3, MOD_08:Azure&GenAI, MOD_09:9RealProjects, MOD_10:Career&Referrals)
 
 POSTS DATA:
@@ -212,8 +230,6 @@ Respond STRICTLY with a valid JSON array of objects:
 [
   {
     "index": 0,
-    "isRelevant": true,
-    "mentionsVikasRatnawat": true,
     "aiRelevanceScore": 95,
     "aiReasoning": "Hands-on Linux filesystem hierarchy troubleshooting.",
     "matchedModuleIds": ["MOD_02"]
@@ -260,9 +276,7 @@ Respond STRICTLY with a valid JSON array of objects:
 
           const results = preProcessed.map((prep) => {
             const aiResult = parsedArray.find((r) => r.index === prep.index) || {};
-            const isRelevant = aiResult.isRelevant ?? prep.hasPotential;
-            const mentionsVikas = aiResult.mentionsVikasRatnawat ?? prep.mentionsVikas;
-            const score = aiResult.aiRelevanceScore ?? (prep.hasHubTag && mentionsVikas ? 95 : 75);
+            const score = aiResult.aiRelevanceScore ?? getLocalRelevanceScore(prep);
 
             const validAiModules = (aiResult.matchedModuleIds || []).filter((id) =>
               BATCH_45_MODULES.some((m) => m.id === id)
@@ -270,13 +284,16 @@ Respond STRICTLY with a valid JSON array of objects:
             const finalModules = validAiModules.length > 0 ? validAiModules : prep.matchedModuleIds;
 
             return {
-              isRelevant,
-              mentionsVikasRatnawat: mentionsVikas,
+              isRelevant: prep.isRelevant,
+              mentionsVikasRatnawat: prep.mentionsVikas,
               aiRelevanceScore: score,
-              aiReasoning: aiResult.aiReasoning || (isRelevant ? 'Verified CloudDevOpsHub community post' : 'General post'),
-              aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
+              aiReasoning: prep.isRelevant
+                ? (aiResult.aiReasoning || 'Passed the required hashtag, mentor mention, and DevOps topic checks.')
+                : `Rejected: ${prep.eligibilityFailures.join('; ')}.`,
+              aiVerdict: prep.isRelevant ? 'VERIFIED' : 'REJECTED',
               detectedKeywords: prep.detected,
               matchedModuleIds: finalModules,
+              eligibilityFailures: prep.eligibilityFailures,
             };
           });
 
@@ -334,51 +351,25 @@ Respond STRICTLY with a valid JSON array of objects:
     );
   }
 
-  // High-Fidelity Strict NLP Heuristics Fallback
-  const heuristicResults = preProcessed.map((prep) => {
-    if (!prep.hasPotential) {
-      return {
-        isRelevant: false,
-        mentionsVikasRatnawat: false,
-        aiRelevanceScore: 0,
-        aiReasoning: 'General profile post unrelated to CloudDevOpsHub Batch 45 curriculum.',
-        aiVerdict: 'REJECTED',
-        detectedKeywords: prep.detected,
-        matchedModuleIds: [],
-      };
-    }
-
-    let score = 0;
-    if (prep.hasHubTag) score += 50;
-    if (prep.mentionsVikas) score += 40;
-    if (prep.detected.length >= 2) score += Math.min(25, prep.detected.length * 5);
-    if (prep.matchedModuleIds.length > 0) score += 10;
-
-    const finalScore = Math.min(100, Math.max(0, score));
-    const isRelevant = prep.hasHubTag || (prep.mentionsVikas && prep.detected.length >= 1) || finalScore >= 50;
-
-    let aiReasoning = '';
-    if (isRelevant && prep.mentionsVikas) {
-      aiReasoning = `Verified Batch 45 Contribution: Hands-on work tagged with mentor Vikas Ratnawat covering ${prep.matchedModuleIds.join(', ') || 'DevOps'}.`;
-    } else if (isRelevant && !prep.mentionsVikas) {
-      aiReasoning = `Relevant DevOps post covering ${prep.detected.slice(0, 3).join(', ')}.`;
-    } else {
-      aiReasoning = 'Post content does not meet minimum CloudDevOpsHub community relevance thresholds.';
-    }
-
+  const ruleBasedResults = preProcessed.map((prep) => {
+    const topicKeywords = prep.detected.filter((keyword) => keyword !== 'CloudDevOpsHub');
+    const aiReasoning = prep.isRelevant
+      ? `Passed required hashtag, mentor mention, and DevOps topic checks: ${topicKeywords.slice(0, 3).join(', ')}.`
+      : `Rejected: ${prep.eligibilityFailures.join('; ')}.`;
     return {
-      isRelevant,
+      isRelevant: prep.isRelevant,
       mentionsVikasRatnawat: prep.mentionsVikas,
-      aiRelevanceScore: finalScore,
+      aiRelevanceScore: getLocalRelevanceScore(prep),
       aiReasoning,
-      aiVerdict: isRelevant ? 'VERIFIED' : 'REJECTED',
+      aiVerdict: prep.isRelevant ? 'VERIFIED' : 'REJECTED',
       detectedKeywords: prep.detected,
       matchedModuleIds: prep.matchedModuleIds,
+      eligibilityFailures: prep.eligibilityFailures,
     };
   });
 
-  logAnalysisSummary('Local heuristic', heuristicResults, analysisId);
-  return heuristicResults;
+  logAnalysisSummary('Local rule-based', ruleBasedResults, analysisId);
+  return ruleBasedResults;
 }
 
 module.exports = {
